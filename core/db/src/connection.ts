@@ -17,6 +17,7 @@ export function getDb() {
     max: 10,
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 5_000,
+    ssl: false,
   });
 
   _db = drizzle(_pool, { schema });

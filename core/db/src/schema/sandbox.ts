@@ -22,12 +22,12 @@ export const sandboxSessions = pgTable('sandbox_sessions', {
 
 export const sandboxTrades = pgTable('sandbox_trades', {
   id: text('id').primaryKey().$defaultFn(() => createId()),
-  sessionId: text('session_id').notNull().references(() => sandboxSessions.id, { onDelete: 'cascade' }),
+  sessionId: text('session_id').notNull(),
   userId: text('user_id').notNull(),
   tokenMint: text('token_mint').notNull(),
   tokenSymbol: text('token_symbol').notNull(),
   tokenName: text('token_name').notNull(),
-  action: text('action').notNull(),   // BUY | SELL
+  action: text('action').notNull(),
   fakeUsdAmount: numeric('fake_usd_amount', { precision: 18, scale: 6 }).notNull(),
   price: numeric('price', { precision: 18, scale: 10 }).notNull(),
   score: integer('score').notNull(),
@@ -39,12 +39,11 @@ export const sandboxTrades = pgTable('sandbox_trades', {
 }, (t) => ({
   sessionIdx: index('sandbox_trades_session_idx').on(t.sessionId),
   userIdx: index('sandbox_trades_user_idx').on(t.userId),
-  tokenIdx: index('sandbox_trades_token_idx').on(t.tokenMint),
 }));
 
 export const sandboxPositions = pgTable('sandbox_positions', {
   id: text('id').primaryKey().$defaultFn(() => createId()),
-  sessionId: text('session_id').notNull().references(() => sandboxSessions.id, { onDelete: 'cascade' }),
+  sessionId: text('session_id').notNull(),
   userId: text('user_id').notNull(),
   tokenMint: text('token_mint').notNull(),
   tokenSymbol: text('token_symbol').notNull(),

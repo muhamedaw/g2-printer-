@@ -1,6 +1,6 @@
 import { createId } from '@paralleldrive/cuid2';
 import type { SandboxConfig, SandboxState, SandboxPosition, SandboxTrade } from '@mpg2/shared';
-import { sleep } from '@mpg2/shared';
+import { sleep, createLogger } from '@mpg2/shared';
 import { SandboxWallet } from './SandboxWallet.js';
 import { TokenDetector } from '../detectors/TokenDetector.js';
 import { FakeExecutor } from '../execution/FakeExecutor.js';
@@ -9,12 +9,11 @@ import { ReportGenerator } from '../reporting/ReportGenerator.js';
 import { QuickScorer } from '../scoring/QuickScorer.js';
 import { getDb } from '@mpg2/db';
 import { sandboxSessions, sandboxTrades, sandboxPositions } from '@mpg2/db';
-import { eq } from 'drizzle-orm';
-import { createLogger } from '@mpg2/shared';
+import { eq, and } from 'drizzle-orm';
 
 const log = createLogger('sandbox-engine');
-const TICK_INTERVAL_MS = 15_000; // check positions every 15s
-const SCAN_FOR_BUYS_INTERVAL = 4;  // every 4 ticks = 60s look for new buys
+const TICK_INTERVAL_MS = 15_000;
+const SCAN_FOR_BUYS_INTERVAL = 4; // every 4 ticks = 60s
 
 export class SandboxEngine {
   private sessions = new Map<string, SandboxState>();
@@ -63,20 +62,25 @@ export class SandboxEngine {
       totalPnlUsd: 0,
     };
 
-    const db = getDb();
-    await db.insert(sandboxSessions).values({
-      id: sessionId,
-      userId: params.userId,
-      status: 'RUNNING',
-      startingCapital: String(params.startingCapital),
-      currentCapital: String(params.startingCapital),
-      peakCapital: String(params.startingCapital),
-      config,
-      endsAt: state.endsAt,
-    });
+    try {
+      const db = getDb();
+      await db.insert(sandboxSessions).values({
+        id: sessionId,
+        userId: params.userId,
+        status: 'RUNNING',
+        startingCapital: String(params.startingCapital),
+        currentCapital: String(params.startingCapital),
+        peakCapital: String(params.startingCapital),
+        config,
+        endsAt: state.endsAt,
+      });
+    } catch (err) {
+      // DB failure shouldn't block the session — log and continue in-memory
+      log.warn({ err, sessionId }, 'DB insert failed — running in-memory only');
+    }
 
     this.sessions.set(sessionId, state);
-    this.runLoop(sessionId).catch(err => log.error({ err, sessionId }, 'session loop error'));
+    this.runLoop(sessionId);
     return state;
   }
 
@@ -100,40 +104,57 @@ export class SandboxEngine {
     return state;
   }
 
-  private async runLoop(sessionId: string): Promise<void> {
+  private runLoop(sessionId: string): void {
+    // Deliberately not await — runs independently. Errors are caught inside.
+    void this.loopImpl(sessionId);
+  }
+
+  private async loopImpl(sessionId: string): Promise<void> {
     let tick = 0;
+    log.info({ sessionId }, 'Session loop started');
+
     while (true) {
       const state = this.sessions.get(sessionId);
-      if (!state || state.status !== 'RUNNING') break;
-
-      if (Date.now() >= state.endsAt.getTime()) {
-        state.status = 'COMPLETED';
-        await this.finalizeSession(state);
+      if (!state || state.status !== 'RUNNING') {
+        log.info({ sessionId, status: state?.status }, 'Session loop exiting');
         break;
       }
 
-      // 1. Update existing positions
-      const { closed, updatedPositions } = await this.positionMgr.checkAndClose(
-        state.openPositions, state.config
-      );
-
-      state.openPositions = updatedPositions;
-      for (const trade of closed) {
-        const wallet = new SandboxWallet(state.capital);
-        wallet.credit(trade.fakeUsdAmount);
-        state.capital += trade.fakeUsdAmount;
-        state.closedTrades.push(trade);
-        state.totalTrades++;
-        if ((trade.pnlUsd ?? 0) > 0) state.winningTrades++;
-        await this.persistTrade(trade, state.config.userId);
+      if (Date.now() >= state.endsAt.getTime()) {
+        state.status = 'COMPLETED';
+        await this.finalizeSession(state).catch(e => log.error({ e }, 'finalizeSession error'));
+        break;
       }
 
-      // 2. Look for new buys every N ticks
-      if (tick % SCAN_FOR_BUYS_INTERVAL === 0) {
-        await this.tryBuy(state);
+      try {
+        // Update open positions — check TP/SL
+        const { closed, updatedPositions } = await this.positionMgr.checkAndClose(
+          state.openPositions, state.config,
+        );
+        state.openPositions = updatedPositions;
+
+        for (const trade of closed) {
+          state.capital += trade.fakeUsdAmount;
+          if (state.capital > state.peakCapital) state.peakCapital = state.capital;
+          state.closedTrades.push(trade);
+          state.totalTrades++;
+          if ((trade.pnlUsd ?? 0) > 0) state.winningTrades++;
+          await this.persistTrade(trade, state.config.userId).catch(() => null);
+        }
+
+        // Scan for new buys every 4 ticks (60s)
+        if (tick % SCAN_FOR_BUYS_INTERVAL === 0) {
+          await this.tryBuy(state).catch(e =>
+            log.warn({ e, sessionId }, 'tryBuy failed — skipping this tick'),
+          );
+        }
+
+        await this.persistSessionState(state).catch(() => null);
+      } catch (err) {
+        // Never let a single tick kill the loop
+        log.error({ err, sessionId, tick }, 'Tick error — continuing');
       }
 
-      await this.persistSessionState(state);
       tick++;
       await sleep(TICK_INTERVAL_MS);
     }
@@ -147,21 +168,22 @@ export class SandboxEngine {
     for (const candidate of candidates) {
       if (state.openPositions.size >= state.config.maxPositions) break;
       if (state.openPositions.has(candidate.snapshot.mint)) continue;
+      if (state.capital < 5) break; // not enough fake money
 
       const qs = this.scorer.score(candidate.snapshot);
       const result = this.executor.buy(state.config, candidate.snapshot, qs, state.capital);
       if (!result) continue;
 
       const { position, trade } = result;
-      if (!new SandboxWallet(state.capital).debit(trade.fakeUsdAmount)) continue;
-      state.capital -= trade.fakeUsdAmount;
+      if (trade.fakeUsdAmount > state.capital) continue;
 
+      state.capital -= trade.fakeUsdAmount;
       state.openPositions.set(position.tokenMint, position);
       state.closedTrades.push(trade);
       state.totalTrades++;
 
-      await this.persistTrade(trade, state.config.userId);
-      await this.persistPosition(position, state.config);
+      await this.persistTrade(trade, state.config.userId).catch(() => null);
+      await this.persistPosition(position, state.config).catch(() => null);
       log.info({ sessionId: state.config.sessionId, token: position.tokenSymbol, score: qs.total }, 'sandbox buy');
     }
   }
@@ -171,23 +193,27 @@ export class SandboxEngine {
     for (const trade of timeoutTrades) {
       state.capital += trade.fakeUsdAmount;
       state.closedTrades.push(trade);
-      await this.persistTrade(trade, state.config.userId);
+      await this.persistTrade(trade, state.config.userId).catch(() => null);
     }
     state.openPositions.clear();
     state.totalPnlUsd = state.capital - state.config.startingCapital;
 
-    const db = getDb();
-    await db.update(sandboxSessions)
-      .set({
-        status: state.status,
-        currentCapital: String(state.capital),
-        peakCapital: String(state.peakCapital),
-        totalPnlUsd: String(state.totalPnlUsd),
-        totalTrades: state.totalTrades,
-        winningTrades: state.winningTrades,
-        completedAt: new Date(),
-      })
-      .where(eq(sandboxSessions.id, state.config.sessionId));
+    try {
+      const db = getDb();
+      await db.update(sandboxSessions)
+        .set({
+          status: state.status,
+          currentCapital: String(state.capital),
+          peakCapital: String(state.peakCapital),
+          totalPnlUsd: String(state.totalPnlUsd),
+          totalTrades: state.totalTrades,
+          winningTrades: state.winningTrades,
+          completedAt: new Date(),
+        })
+        .where(eq(sandboxSessions.id, state.config.sessionId));
+    } catch (err) {
+      log.warn({ err }, 'DB update on finalize failed');
+    }
 
     log.info({ sessionId: state.config.sessionId, status: state.status, pnl: state.totalPnlUsd }, 'session ended');
   }

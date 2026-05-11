@@ -1,3 +1,50 @@
+export interface Token {
+  address: string;
+  symbol?: string;
+  name?: string;
+  decimals?: number;
+  detectedAt: Date;
+  source: TokenSource;
+}
+
+export type TokenSource =
+  | 'pump_fun_launch'
+  | 'pump_fun_graduation'
+  | 'social_signal'
+  | 'wallet_copy'
+  | 'manual';
+
+export interface TokenSafety {
+  tokenAddress: string;
+  overallScore: number;
+  mintAuthorityRevoked: boolean;
+  freezeAuthorityRevoked: boolean;
+  topHolderPct: number;
+  top10HoldersPct: number;
+  holderCount: number;
+  isHoneypot: boolean;
+  liquidityUsd: number;
+  tokenAgeMinutes: number;
+  buySellRatio: number;
+  rugcheckScore: number;
+  dnaMatchFound: boolean;
+  rejectionReason?: string | undefined;
+  passed: boolean;
+  checkedAt: Date;
+  expiresAt: Date;
+}
+
+export interface TokenDNA {
+  patternId: string;
+  creatorWallet: string;
+  contractPatterns: string[];
+  lpPatterns: string[];
+  holderPatterns: string[];
+  ruggedTokens: string[];
+  confidence: number;
+}
+
+// DexScreener API response shape
 export interface DexScreenerToken {
   chainId: string;
   dexId: string;
@@ -13,24 +60,11 @@ export interface DexScreenerToken {
   fdv: number;
   marketCap: number;
   pairCreatedAt: number;
-  info?: { imageUrl?: string; websites?: Array<{ url: string }>; socials?: Array<{ type: string; url: string }> };
-}
-
-export interface RugCheckResult {
-  mint: string;
-  score: number;          // 0 = clean, 100 = definite rug
-  risks: RugRisk[];
-  tokenMeta?: { name: string; symbol: string; decimals: number };
-  topHolders?: Array<{ address: string; pct: number }>;
-  markets?: Array<{ liquidityUsd: number }>;
-}
-
-export interface RugRisk {
-  name: string;
-  value: string;
-  description: string;
-  score: number;
-  level: 'low' | 'medium' | 'high' | 'critical';
+  info?: {
+    imageUrl?: string;
+    websites?: Array<{ url: string }>;
+    socials?: Array<{ type: string; url: string }>;
+  };
 }
 
 export interface TokenSnapshot {
@@ -46,7 +80,24 @@ export interface TokenSnapshot {
   txBuysH1: number;
   txSellsH1: number;
   pairCreatedAt: number;
-  rugScore: number;       // from RugCheck, 0=clean
-  topHolderPct: number;   // top holder % concentration
+  rugScore: number;
+  topHolderPct: number;
   fetchedAt: Date;
+}
+
+export interface RugCheckResult {
+  mint: string;
+  score: number;
+  risks: RugRisk[];
+  tokenMeta?: { name: string; symbol: string; decimals: number };
+  topHolders?: Array<{ address: string; pct: number }>;
+  markets?: Array<{ liquidityUsd: number }>;
+}
+
+export interface RugRisk {
+  name: string;
+  value: string;
+  description: string;
+  score: number;
+  level: 'low' | 'medium' | 'high' | 'critical';
 }

@@ -1,0 +1,53 @@
+import { pgTable, bigserial, varchar, text, numeric, boolean, timestamp, index } from 'drizzle-orm/pg-core';
+
+export const trades = pgTable('trades', {
+  id: bigserial('id', { mode: 'number' }).primaryKey(),
+  userId: text('user_id').notNull(),
+  contractAddress: varchar('contract_address', { length: 44 }).notNull(),
+  tokenSymbol: varchar('token_symbol', { length: 20 }),
+  tradeType: varchar('trade_type', { length: 30 }).notNull(),
+  isPaperTrade: boolean('is_paper_trade').notNull().default(true),
+  entryPrice: numeric('entry_price', { precision: 20, scale: 10 }),
+  exitPrice: numeric('exit_price', { precision: 20, scale: 10 }),
+  quantityTokens: numeric('quantity_tokens', { precision: 30, scale: 10 }),
+  solAmount: numeric('sol_amount', { precision: 18, scale: 9 }),
+  usdAmount: numeric('usd_amount', { precision: 18, scale: 2 }),
+  pnlUsd: numeric('pnl_usd', { precision: 18, scale: 2 }),
+  pnlPct: numeric('pnl_pct', { precision: 10, scale: 4 }),
+  finalScore: numeric('final_score', { precision: 5, scale: 2 }),
+  txSignature: varchar('tx_signature', { length: 100 }),
+  gasFeeSOL: numeric('gas_fee_sol', { precision: 18, scale: 9 }),
+  jitoTipSOL: numeric('jito_tip_sol', { precision: 18, scale: 9 }),
+  sellReason: varchar('sell_reason', { length: 50 }),
+  copyTradeWallet: varchar('copy_trade_wallet', { length: 44 }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  userIdx: index('trades_user_idx').on(t.userId),
+  contractIdx: index('trades_contract_idx').on(t.contractAddress),
+  createdIdx: index('trades_created_idx').on(t.createdAt),
+}));
+
+export const positions = pgTable('positions', {
+  id: bigserial('id', { mode: 'number' }).primaryKey(),
+  userId: text('user_id').notNull(),
+  contractAddress: varchar('contract_address', { length: 44 }).notNull(),
+  tokenSymbol: varchar('token_symbol', { length: 20 }),
+  entryPrice: numeric('entry_price', { precision: 20, scale: 10 }).notNull(),
+  currentPrice: numeric('current_price', { precision: 20, scale: 10 }),
+  highestPriceSeen: numeric('highest_price_seen', { precision: 20, scale: 10 }),
+  quantityRemaining: numeric('quantity_remaining', { precision: 30, scale: 10 }).notNull(),
+  usdInvested: numeric('usd_invested', { precision: 18, scale: 2 }).notNull(),
+  currentUsdValue: numeric('current_usd_value', { precision: 18, scale: 2 }),
+  unrealizedPnlPct: numeric('unrealized_pnl_pct', { precision: 10, scale: 4 }),
+  tp1Executed: boolean('tp1_executed').default(false),
+  tp2Executed: boolean('tp2_executed').default(false),
+  tp3Executed: boolean('tp3_executed').default(false),
+  trailingStopActive: boolean('trailing_stop_active').default(false),
+  finalScore: numeric('final_score', { precision: 5, scale: 2 }),
+  isPaperTrade: boolean('is_paper_trade').notNull().default(true),
+  openedAt: timestamp('opened_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  userIdx: index('positions_user_idx').on(t.userId),
+  openIdx: index('positions_open_idx').on(t.userId, t.isPaperTrade),
+}));

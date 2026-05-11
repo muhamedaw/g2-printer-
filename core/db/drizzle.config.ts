@@ -1,6 +1,14 @@
 ﻿import { defineConfig } from 'drizzle-kit';
 export default defineConfig({
-  schema: './src/schema/sandbox.ts',
+  schema: [
+    './src/schema/sandbox.ts',
+    './src/schema/users.ts',
+    './src/schema/signals.ts',
+    './src/schema/safety.ts',
+    './src/schema/trades.ts',
+    './src/schema/wallets.ts',
+    './src/schema/stats.ts',
+  ],
   out: './migrations',
   dialect: 'postgresql',
   dbCredentials: {
