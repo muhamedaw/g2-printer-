@@ -2257,6 +2257,539 @@ Users share their performance → organic viral growth → zero marketing cost.
 
 ---
 
-*MONEY PRINTER G2 MASTER PROMPT V3.0*
-*16 Prompts — Complete Monorepo — Production Grade — Open Source Only*
-*Ollama AI • Drizzle ORM • Stripe Monetization • Multi-tenant*
+---
+
+# ═══════════════════════════════════════════════════════════════
+# MACHINE 2 — SANDBOX / SIMULATION ENGINE
+# Zero API keys. Zero wallet. Real market prices. Fake money.
+# ═══════════════════════════════════════════════════════════════
+
+## WHAT IS THE SANDBOX
+Machine 2 is a completely isolated simulation environment.
+It uses REAL Solana market prices to simulate REALISTIC trades.
+The user puts in virtual money ($100, $500, etc.) and the system
+buys/sells tokens automatically using the same AI logic as Machine 1.
+After X hours, the user sees exactly how much they would have made or lost.
+
+WHY THIS IS THE MOST IMPORTANT FEATURE:
+- Zero barrier to entry. No API keys. No wallet. No setup.
+- Proves the system works with REAL numbers
+- Users share results → viral growth → converts to paying customers
+- "I made +340% in 2 hours simulation" → user upgrades to $149/mo Pro plan
+
+## MACHINE 2 vs MACHINE 1 COMPARISON
+
+| Feature                  | Machine 1 (Normal)         | Machine 2 (Sandbox)        |
+|--------------------------|----------------------------|----------------------------|
+| Real money               | YES (live trading)         | NO (virtual only)          |
+| Solana wallet            | REQUIRED for live          | NOT NEEDED                 |
+| Helius API key           | REQUIRED                   | NOT NEEDED                 |
+| Twitter/Reddit API       | REQUIRED for social data   | NOT NEEDED                 |
+| Ollama AI                | REQUIRED for full AI       | NOT NEEDED (uses QuickScore)|
+| Stripe subscription      | REQUIRED for live          | NOT NEEDED                 |
+| Market prices            | Real (DexScreener)         | Real (DexScreener)         |
+| Signal detection         | Full 6-agent AI system     | Keyword + RugCheck only    |
+| Safety checks            | Full 5-checker system      | RugCheck only (free)       |
+| Position management      | Full TP/SL system          | SAME exact logic           |
+| P&L calculation          | Real money                 | Virtual money at real price|
+| Setup time               | 2-3 hours                  | 30 SECONDS                 |
+| Required env vars        | 15+                        | 3 (DB, Redis, Telegram opt)|
+
+## SANDBOX FOLDER STRUCTURE
+
+```
+services/sandbox/
+├── src/
+│   ├── core/
+│   │   ├── SandboxEngine.ts      # Main orchestrator — runs the whole simulation
+│   │   ├── SandboxSession.ts     # One simulation run (balance + duration + results)
+│   │   └── SandboxWallet.ts      # Virtual balance: tracks virtual USD holdings
+│   ├── detectors/
+│   │   ├── PumpFunDetector.ts    # WebSocket: new Pump.fun launches (FREE, no key)
+│   │   ├── TrendingDetector.ts   # DexScreener trending Solana tokens (FREE, no key)
+│   │   └── GraduationDetector.ts # Pump.fun → Raydium graduation events
+│   ├── scoring/
+│   │   ├── QuickScorer.ts        # Fast keyword scoring — no Ollama needed
+│   │   └── SandboxSafetyChecker.ts # RugCheck API only (FREE, no key)
+│   ├── execution/
+│   │   ├── FakeExecutor.ts       # Records fake buys/sells at REAL current prices
+│   │   └── SandboxPositionManager.ts # SAME TP/SL logic as Machine 1
+│   ├── reporting/
+│   │   ├── PortfolioTracker.ts   # Live virtual portfolio value
+│   │   └── ReportGenerator.ts   # Full P&L breakdown on demand
+│   └── telegram/
+│       └── SandboxBot.ts         # Telegram bot — primary interface
+├── tsconfig.json
+└── package.json
+```
+
+## SANDBOX PROMPT — BUILD GUIDE
+
+```
+PROMPT S1 — SANDBOX ENGINE (Machine 2)
+Depends on: PROMPT 01 complete (shared types + DB)
+This is a STANDALONE service. Does not depend on any other service.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+WHAT SANDBOX NEEDS (FREE ONLY, NO KEYS):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+APIs used (all FREE, no API key required):
+1. DexScreener: https://api.dexscreener.com — trending tokens + prices
+2. RugCheck: https://api.rugcheck.xyz/v1/tokens/{mint}/report/summary — safety
+3. Jupiter: https://quote-api.jup.ag/v6/quote — price verification + honeypot check
+4. Pump.fun WebSocket: wss://pumpportal.fun/api/data — new token launches
+
+No Twitter. No Reddit. No Telegram scraping. No Helius. No Ollama.
+No Stripe. No wallet. ZERO paid services or API keys needed.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+BUILD: core/SandboxSession.ts
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+export interface SandboxConfig {
+  sessionId: string;
+  telegramChatId: string;
+  startingBalanceUsd: number;     // e.g. 100
+  durationMs: number;             // e.g. 7_200_000 (2 hours)
+  maxPositions: number;           // e.g. 5
+  minScoreToBuy: number;          // e.g. 65 (lower than real — sandbox explores more)
+  stopLossPct: number;            // e.g. 0.30
+  tp1: number; tp2: number; tp3: number; // 2x, 5x, 10x
+  startedAt: Date;
+  endsAt: Date;
+}
+
+export interface SandboxState {
+  config: SandboxConfig;
+  virtualBalanceUsd: number;      // Current available cash
+  openPositions: SandboxPosition[];
+  closedTrades: SandboxTrade[];
+  totalTradesCount: number;
+  winningTradesCount: number;
+  isRunning: boolean;
+}
+
+export interface SandboxPosition {
+  tokenAddress: string;
+  tokenSymbol?: string;
+  entryPrice: number;             // Real price at "buy" time
+  currentPrice: number;           // Updated every 30s from DexScreener
+  highestPriceSeen: number;
+  virtualAmountUsd: number;       // How much virtual USD invested
+  quantityTokens: number;
+  unrealizedPnlPct: number;
+  unrealizedPnlUsd: number;
+  tp1Done: boolean;
+  tp2Done: boolean;
+  tp3Done: boolean;
+  trailingActive: boolean;
+  score: number;                  // Score that triggered buy
+  openedAt: Date;
+}
+
+export interface SandboxTrade {
+  tokenAddress: string;
+  tokenSymbol?: string;
+  tradeType: 'BUY' | 'SELL_TP1' | 'SELL_TP2' | 'SELL_TP3' | 'SELL_SL' | 'SELL_TRAILING';
+  entryPrice: number;
+  exitPrice?: number;
+  amountUsd: number;
+  pnlUsd?: number;
+  pnlPct?: number;
+  score: number;
+  executedAt: Date;
+}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+BUILD: detectors/PumpFunDetector.ts
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Connect to Pump.fun WebSocket: wss://pumpportal.fun/api/data
+Subscribe to: { method: "subscribeNewToken" }
+Subscribe to: { method: "subscribeMigration" } (graduations)
+
+On newToken event → emit candidate token
+On migration event → emit graduation candidate (higher priority)
+
+No API key. Free. Real-time.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+BUILD: detectors/TrendingDetector.ts
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Every 60 seconds:
+GET https://api.dexscreener.com/latest/dex/search?q=solana
+
+Filter results:
+- volume24h > 10000
+- liquidity > 5000
+- priceChange1h > 5% (momentum)
+- NOT already in open positions
+- NOT in blacklist
+
+Emit each filtered token as candidate.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+BUILD: scoring/QuickScorer.ts
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+WHY QUICKSCORER (not Ollama):
+Sandbox needs zero dependencies. QuickScorer is a rules-based system
+that produces 70-80% accuracy vs Ollama. Fast. Zero compute. Deterministic.
+
+Input: token data from DexScreener + RugCheck result
+
+Score formula (0-100):
+  liquidityScore    = map(liquidityUsd, 5000, 200000, 0, 25)    // 25 points max
+  volumeScore       = map(volume24h,    1000,  500000, 0, 20)    // 20 points max
+  priceVelocity     = map(priceChange1h,  5%,     50%, 0, 20)    // 20 points max
+  safetyScore       = map(rugcheckScore, 0, 1000, 0, 20)         // 20 points max
+  holderScore       = map(holderCount, 50, 1000, 0, 10)          // 10 points max
+  ageBonus          = tokenAgeMinutes in [60, 720] ? +5 : 0      //  5 points bonus
+
+  HARD BLOCKS (score → 0 immediately):
+  - rugcheckScore < 300 (very risky)
+  - isHoneypot === true
+  - top10HoldersPct > 70%
+  - mintAuthority not revoked
+  - tokenAgeMinutes < 30 (too new, likely rug setup)
+
+  finalScore = sum of all components (capped at 100)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+BUILD: scoring/SandboxSafetyChecker.ts
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+For each candidate token:
+1. GET https://api.rugcheck.xyz/v1/tokens/{mint}/report/summary
+   - Extract: score, risks, top10HoldersPct, mintAuthorityRevoked
+2. GET https://quote-api.jup.ag/v6/quote?inputMint={token}&outputMint=WSOL&amount=1000000
+   - Check: priceImpact < 80% (honeypot check)
+3. GET https://api.dexscreener.com/latest/dex/tokens/{mint}
+   - Extract: liquidity, volume, holders, age
+
+Cache each result in Redis: 'sandbox:safety:{address}' TTL 15 min
+No Helius. No holder analysis. RugCheck alone is enough for sandbox.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+BUILD: execution/FakeExecutor.ts
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+On approved signal (score >= config.minScoreToBuy):
+
+1. Fetch REAL current price from DexScreener (this makes it realistic)
+2. Calculate position size:
+   - Available cash = state.virtualBalanceUsd
+   - Per position: min(available * 0.20, available / (maxPositions - openPositions.length))
+   - If available < $1 → skip (not enough virtual funds)
+3. Create SandboxPosition at REAL current price
+4. Deduct from virtualBalanceUsd
+5. Save to state
+6. Send Telegram alert:
+   "🤖 SANDBOX BUY
+   Token: {symbol}
+   Virtual spent: ${amount}
+   Price: ${price}
+   Score: {score}/100
+   Balance remaining: ${balance}"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+BUILD: execution/SandboxPositionManager.ts
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Runs every 30 seconds via setInterval (no BullMQ needed in sandbox).
+
+For each open position:
+1. Fetch current price: GET https://api.dexscreener.com/latest/dex/tokens/{address}
+2. Update unrealizedPnlPct = (currentPrice - entryPrice) / entryPrice
+3. Update highestPriceSeen
+4. Check exits (SAME logic as Machine 1):
+   - Stop Loss:      currentPrice < entryPrice * (1 - stopLossPct) → SELL ALL
+   - Trailing Stop:  trailingActive AND currentPrice < highestPriceSeen * 0.80 → SELL ALL
+   - TP1:            currentPrice >= entryPrice * 2.0 AND !tp1Done → SELL 30%, activate trailing
+   - TP2:            currentPrice >= entryPrice * 5.0 AND !tp2Done → SELL 30%
+   - TP3:            currentPrice >= entryPrice * 10.0 AND !tp3Done → SELL 30%
+
+On any sell:
+- Add realizedPnlUsd back to virtualBalanceUsd
+- Remove position or update quantity
+- Create SandboxTrade record
+- Send Telegram alert with result
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+BUILD: reporting/ReportGenerator.ts
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+generateLiveReport(state: SandboxState): string
+  Returns Telegram message:
+  "📊 SANDBOX REPORT
+  ━━━━━━━━━━━━━━━━━
+  Started with:  $100.00
+  Current value: $143.21  (+43.2%)
+  Available cash: $67.50
+  Open positions: 2
+
+  📈 OPEN POSITIONS:
+  • BONK: +127% ($25 → $56.75) 🟢
+  • MYRO: -8%   ($25 → $23.00) 🔴
+
+  📋 CLOSED TRADES: 3
+  ✅ WIF:  +340%  (+$85)
+  ✅ POPCAT: +82% (+$20)
+  ❌ BOME:  -30%  (-$7.50)
+
+  Win Rate: 66.7%
+  Remaining time: 1h 23m"
+
+generateFinalReport(state: SandboxState): string
+  Same format but with:
+  - Final portfolio value
+  - Full trade list
+  - If results are profitable → show upgrade CTA:
+    "🚀 Ready to do this with REAL money?
+    Upgrade to Starter plan: $49/month
+    Start making real profits today"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+BUILD: telegram/SandboxBot.ts
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Grammy.js bot. Commands:
+
+/start
+  → Welcome + quick explanation
+  → Show preset options:
+    [💵 $50 · 2h] [💵 $100 · 2h] [💵 $100 · 24h] [💵 $500 · 24h]
+  → Or type: /sim 100 2h
+
+/sim {amount} {duration}
+  Examples: /sim 100 2h | /sim 500 24h | /sim 1000 1d
+  → Creates new SandboxSession
+  → Starts SandboxEngine
+  → Sends confirmation:
+    "✅ Simulation started!
+    Virtual capital: $100
+    Duration: 2 hours (ends at 20:30)
+    Min score to buy: 65
+    Max positions: 5
+    I'll alert you on every trade. Type /status to check anytime."
+
+/status
+  → Calls generateLiveReport() → sends current state
+
+/positions
+  → Lists all open positions with current P&L
+
+/trades
+  → Lists last 10 closed trades
+
+/stop
+  → Stops current simulation
+  → Generates final report
+
+/compare
+  → Shows: "With $100, simulation made +$43.21 (+43.2%)
+    On Machine 1 (real trading) this would be REAL profit."
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+BUILD: core/SandboxEngine.ts (main orchestrator)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+async start(config: SandboxConfig):
+  1. Initialize SandboxState
+  2. Start PumpFunDetector WebSocket
+  3. Start TrendingDetector interval (60s)
+  4. Start PositionManager interval (30s)
+  5. Start session timer → when endsAt reached → generateFinalReport + stop all
+  6. Save state to Redis: 'sandbox:session:{chatId}'
+  7. Persist trades to DB (sandbox_trades table) for history
+
+On each candidate token:
+  1. SandboxSafetyChecker.check(address)
+  2. QuickScorer.score(tokenData, safetyResult)
+  3. If score >= config.minScoreToBuy AND positions < config.maxPositions:
+     → FakeExecutor.buy(token, score, state)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SANDBOX DATABASE TABLE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Add to core/db/src/schema/sandbox.ts:
+
+export const sandboxSessions = pgTable('sandbox_sessions', {
+  id: text('id').primaryKey(),
+  telegramChatId: text('telegram_chat_id').notNull(),
+  startingBalance: decimal('starting_balance', { precision: 18, scale: 2 }),
+  finalBalance: decimal('final_balance', { precision: 18, scale: 2 }),
+  totalPnlUsd: decimal('total_pnl_usd', { precision: 18, scale: 2 }),
+  totalPnlPct: decimal('total_pnl_pct', { precision: 10, scale: 4 }),
+  totalTrades: integer('total_trades').default(0),
+  winningTrades: integer('winning_trades').default(0),
+  durationMs: integer('duration_ms'),
+  config: jsonb('config'),
+  startedAt: timestamp('started_at').notNull().defaultNow(),
+  endedAt: timestamp('ended_at'),
+  isComplete: boolean('is_complete').default(false),
+});
+
+export const sandboxTrades = pgTable('sandbox_trades', {
+  id: bigserial('id', { mode: 'number' }).primaryKey(),
+  sessionId: text('session_id').notNull().references(() => sandboxSessions.id),
+  tokenAddress: varchar('token_address', { length: 44 }).notNull(),
+  tokenSymbol: varchar('token_symbol', { length: 20 }),
+  tradeType: varchar('trade_type', { length: 30 }).notNull(),
+  entryPrice: decimal('entry_price', { precision: 20, scale: 10 }),
+  exitPrice: decimal('exit_price', { precision: 20, scale: 10 }),
+  amountUsd: decimal('amount_usd', { precision: 18, scale: 2 }),
+  pnlUsd: decimal('pnl_usd', { precision: 18, scale: 2 }),
+  pnlPct: decimal('pnl_pct', { precision: 10, scale: 4 }),
+  score: decimal('score', { precision: 5, scale: 2 }),
+  executedAt: timestamp('executed_at').notNull().defaultNow(),
+});
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SANDBOX PACKAGE.JSON
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+{
+  "name": "@mpg2/sandbox",
+  "dependencies": {
+    "@mpg2/shared": "workspace:*",
+    "@mpg2/db": "workspace:*",
+    "ioredis": "^5.4.0",
+    "grammy": "^1.42.0",
+    "ws": "^8.18.0",
+    "@types/ws": "^8.5.12",
+    "pino": "^9.3.0",
+    "zod": "^3.23.4"
+  }
+}
+```
+
+## SANDBOX ENVIRONMENT (.env.sandbox)
+
+```
+# MACHINE 2 — SANDBOX CONFIG
+# MINIMUM REQUIRED: Only these 4 vars. NOTHING ELSE.
+
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5432
+POSTGRES_DB=mpg2
+POSTGRES_USER=mpg2_user
+POSTGRES_PASSWORD=changeme
+
+REDIS_HOST=localhost
+REDIS_PORT=6380
+REDIS_PASSWORD=changeme
+
+# Optional: Telegram bot for alerts (highly recommended)
+TELEGRAM_BOT_TOKEN=your_bot_token_here
+
+# Sandbox-specific settings
+SANDBOX_MIN_SCORE=65
+SANDBOX_MAX_POSITIONS=5
+NODE_ENV=development
+LOG_LEVEL=info
+
+# Everything else = NOT NEEDED in sandbox mode
+# No Helius API key
+# No Twitter/Reddit APIs
+# No Ollama
+# No Stripe
+# No Solana wallet
+```
+
+## DOCKER COMPOSE FOR SANDBOX (docker-compose.sandbox.yml)
+
+```yaml
+version: '3.8'
+# Machine 2: Sandbox-only stack
+# Start with: docker-compose -f docker-compose.yml -f docker-compose.sandbox.yml up -d sandbox
+services:
+  sandbox:
+    build:
+      context: .
+      dockerfile: services/sandbox/Dockerfile
+    container_name: mpg2-sandbox
+    env_file: .env.sandbox
+    environment:
+      SERVICE_NAME: sandbox
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    restart: unless-stopped
+```
+
+## HOW TO START MACHINE 2 (30 seconds setup)
+
+```bash
+# Step 1: Copy sandbox env (no editing required to test)
+cp .env.example .env.sandbox
+
+# Step 2: Start only what sandbox needs
+docker-compose up -d postgres redis
+
+# Step 3: Start sandbox service
+pnpm --filter @mpg2/sandbox dev
+
+# Step 4: Open Telegram, message your bot
+# Type: /sim 100 2h
+# The bot responds with confirmation
+# Walk away. Come back in 2 hours.
+# Type: /status to check anytime
+```
+
+## SANDBOX vs PAPER TRADING (KEY DIFFERENCE)
+
+Paper Trading (Machine 1):
+- Part of the full platform
+- Requires all API keys (Helius, Twitter, etc.)
+- Uses real 6-agent AI with Ollama
+- Same flow as live trading but no real transactions
+- For POWER USERS who want to test before going live
+
+Sandbox (Machine 2):
+- Completely standalone
+- Zero API keys required
+- Works in 30 seconds
+- For FIRST-TIME USERS who want to see the concept work
+- Sales/marketing tool: converts users to paid plans
+- Can run multiple simultaneous sessions (multiple users testing)
+
+---
+
+# ═══════════════════════════════════════════════════════════════
+# UPDATED EXECUTION ORDER (with Sandbox)
+# ═══════════════════════════════════════════════════════════════
+
+MACHINE 2 (Sandbox) — Can build FIRST, independently:
+S1 → Sandbox Engine (zero dependencies, 30-second setup)
+     Build this before Machine 1 to validate the concept fast.
+
+MACHINE 1 (Normal) — Full platform:
+01 → Monorepo foundation
+02 → API Gateway
+03 → Market Data
+04 → Social Data
+05 → AI Brain
+06 → Security Engine
+07 → Risk Engine
+08 → Trade Engine
+09 → Notification Engine
+10 → Monetization
+── MVP COMPLETE ──
+11 → React Dashboard
+12 → Multi-tenant hardening
+13 → Live trading
+14 → Whale tracker advanced
+15 → Monitoring
+16 → Testing + Pre-launch
+
+RECOMMENDED ORDER: Build S1 first → show it to users → get feedback → build 01-16.
+
+---
+
+*MONEY PRINTER G2 MASTER PROMPT V3.1*
+*16 Prompts (Machine 1) + 1 Prompt (Machine 2 Sandbox)*
+*Open Source Only — Ollama AI — Drizzle ORM — Stripe — Multi-tenant*

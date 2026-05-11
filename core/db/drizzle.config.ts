@@ -1,6 +1,6 @@
 ﻿import { defineConfig } from 'drizzle-kit';
 export default defineConfig({
-  schema: './src/schema/*',
+  schema: './src/schema/sandbox.ts',
   out: './migrations',
   dialect: 'postgresql',
   dbCredentials: {
@@ -9,5 +9,6 @@ export default defineConfig({
     database: process.env['POSTGRES_DB'] ?? 'mpg2',
     user: process.env['POSTGRES_USER'] ?? 'mpg2_user',
     password: process.env['POSTGRES_PASSWORD'] ?? '',
+    ssl: false,
   },
 });
