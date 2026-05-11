@@ -1,0 +1,42 @@
+# Environment — NEVER commit these
+.env
+.env.local
+.env.*.local
+
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+build/
+.turbo/
+
+# Database
+*.db
+*.sqlite
+drizzle/meta/
+
+# Logs
+logs/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/settings.json
+.idea/
+
+# Test coverage
+coverage/
+
+# Wallet keys — belt and suspenders
+*.key
+*.pem
+private_key*
+
+# Ollama models (too large for git)
+*.gguf
+*.bin

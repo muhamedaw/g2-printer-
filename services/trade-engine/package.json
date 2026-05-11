@@ -1,0 +1,28 @@
+﻿{
+  "name": "@mpg2/trade-engine",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "SERVICE_NAME=trade-engine tsx watch src/TradeEngine.ts",
+    "build": "tsc --project tsconfig.json",
+    "start": "node dist/TradeEngine.js",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@mpg2/shared": "workspace:*",
+    "@mpg2/db": "workspace:*",
+    "bullmq": "^5.12.0",
+    "ioredis": "^5.4.0",
+    "zod": "^3.23.4",
+    "pino": "^9.3.0",
+    "@solana/web3.js": "^1.98.0",
+    "jito-ts": "^4.2.1",
+    "@jup-ag/api": "^6.0.48"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0",
+    "tsx": "^4.16.0",
+    "vitest": "^2.0.0"
+  }
+}

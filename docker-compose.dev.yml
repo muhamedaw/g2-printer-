@@ -1,0 +1,13 @@
+version: '3.8'
+# Dev overrides — extra exposed ports, hot reload, verbose logging
+# Usage: docker-compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+services:
+  postgres:
+    ports:
+      - "5432:5432"
+  redis:
+    ports:
+      - "6379:6379"
+  ollama:
+    ports:
+      - "11434:11434"
