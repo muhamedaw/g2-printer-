@@ -2,3 +2,10 @@ packages:
   - 'apps/*'
   - 'services/*'
   - 'core/*'
+allowBuilds:
+  bufferutil: true
+  es5-ext: true
+  esbuild: true
+  msgpackr-extract: true
+  sharp: set this to true or false
+  utf-8-validate: true

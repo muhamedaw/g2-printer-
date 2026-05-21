@@ -1,6 +1,29 @@
 version: '3.8'
 
+x-service-defaults: &service-defaults
+  build:
+    context: .
+    dockerfile: Dockerfile
+  env_file: .env
+  restart: unless-stopped
+  environment: &db-defaults
+    POSTGRES_HOST: postgres
+    REDIS_HOST: redis
+    REDIS_PORT: "6379"
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+  deploy:
+    resources:
+      limits:
+        cpus: '0.5'
+        memory: 512M
+
 services:
+  # ── Infrastructure ────────────────────────────────────────────────────────────
+
   postgres:
     image: postgres:16-alpine
     container_name: mpg2-postgres
@@ -18,11 +41,23 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
 
   redis:
     image: redis:7-alpine
     container_name: mpg2-redis
-    command: redis-server --requirepass ${REDIS_PASSWORD:-changeme} --maxmemory 256mb --maxmemory-policy allkeys-lru
+    command: >
+      redis-server
+      --requirepass ${REDIS_PASSWORD:-changeme}
+      --maxmemory 256mb
+      --maxmemory-policy volatile-lru
+      --appendonly yes
+      --appendfsync everysec
+      --save 60 1
     volumes:
       - redis_data:/data
     ports:
@@ -33,10 +68,16 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 384M
 
   ollama:
     image: ollama/ollama:latest
     container_name: mpg2-ollama
+    profiles: [ai]
     volumes:
       - ollama_data:/root/.ollama
     ports:
@@ -44,6 +85,104 @@ services:
     environment:
       - OLLAMA_HOST=0.0.0.0
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+
+  # ── Application services ──────────────────────────────────────────────────────
+
+  api-gateway:
+    <<: *service-defaults
+    container_name: mpg2-api-gateway
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE: api-gateway
+    command: ["node", "dist/server.js"]
+    ports:
+      - "${API_PORT:-3001}:3001"
+
+  market-data:
+    <<: *service-defaults
+    container_name: mpg2-market-data
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE: market-data
+    ports:
+      - "${WEBHOOK_PORT:-3003}:3003"
+
+  social-data:
+    <<: *service-defaults
+    container_name: mpg2-social-data
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE: social-data
+
+  ai-brain:
+    <<: *service-defaults
+    container_name: mpg2-ai-brain
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE: ai-brain
+    environment:
+      <<: *db-defaults
+      OLLAMA_HOST: http://ollama:11434
+
+  security-engine:
+    <<: *service-defaults
+    container_name: mpg2-security-engine
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE: security-engine
+
+  risk-engine:
+    <<: *service-defaults
+    container_name: mpg2-risk-engine
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE: risk-engine
+
+  trade-engine:
+    <<: *service-defaults
+    container_name: mpg2-trade-engine
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE: trade-engine
+
+  notification-engine:
+    <<: *service-defaults
+    container_name: mpg2-notification-engine
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE: notification-engine
+
+  monetization:
+    <<: *service-defaults
+    container_name: mpg2-monetization
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE: monetization
+    ports:
+      - "3002:3002"
 
 volumes:
   postgres_data:

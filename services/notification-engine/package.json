@@ -1,26 +1,31 @@
-﻿{
+{
   "name": "@mpg2/notification-engine",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "scripts": {
-    "dev": "SERVICE_NAME=notification-engine tsx watch src/worker.ts",
+    "dev": "tsx src/worker.ts",
     "build": "tsc --project tsconfig.json",
     "start": "node dist/worker.js",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@mpg2/shared": "workspace:*",
     "@mpg2/db": "workspace:*",
+    "@mpg2/shared": "workspace:*",
     "bullmq": "^5.12.0",
+    "dotenv": "^16.4.0",
+    "grammy": "^1.42.0",
+    "instagram-private-api": "^1.46.1",
     "ioredis": "^5.4.0",
-    "zod": "^3.23.4",
+    "jimp": "^0.22.12",
     "pino": "^9.3.0",
-    "grammy": "^1.42.0"
+    "twitter-api-v2": "^1.29.0",
+    "zod": "^3.23.4"
   },
   "devDependencies": {
-    "typescript": "^5.5.0",
     "tsx": "^4.16.0",
+    "typescript": "^5.5.0",
     "vitest": "^2.0.0"
   }
 }

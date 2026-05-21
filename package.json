@@ -9,10 +9,10 @@
     "lint": "pnpm -r lint",
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck",
-    "db:generate": "pnpm --filter @mpg2/db drizzle-kit generate",
-    "db:migrate": "pnpm --filter @mpg2/db drizzle-kit migrate",
-    "db:studio": "pnpm --filter @mpg2/db drizzle-kit studio",
-    "db:seed": "pnpm --filter @mpg2/db tsx seeds/dev.ts",
+    "db:generate": "pnpm --filter @mpg2/db generate",
+    "db:migrate": "pnpm --filter @mpg2/db migrate",
+    "db:studio": "pnpm --filter @mpg2/db studio",
+    "db:seed": "pnpm --filter @mpg2/db exec tsx seeds/dev.ts",
     "docker:up": "docker-compose -f docker-compose.yml -f docker-compose.dev.yml up -d",
     "docker:down": "docker-compose down",
     "docker:logs": "docker-compose logs -f",
@@ -29,7 +29,10 @@
     "vitest": "^2.0.0"
   },
   "engines": {
-    "node": ">=20.0.0",
-    "pnpm": ">=9.0.0"
+    "node": ">=22.0.0",
+    "pnpm": ">=11.0.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["bufferutil", "es5-ext", "esbuild", "msgpackr-extract", "utf-8-validate", "sharp"]
   }
 }

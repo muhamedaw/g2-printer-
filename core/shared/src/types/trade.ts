@@ -5,6 +5,7 @@ export interface Trade {
   tokenSymbol?: string | undefined;
   tradeType: TradeType;
   isPaperTrade: boolean;
+  source?: TradeSource | undefined;
   entryPrice?: number | undefined;
   exitPrice?: number | undefined;
   quantityTokens: number;
@@ -21,12 +22,16 @@ export interface Trade {
   createdAt: Date;
 }
 
+export type TradeSource = 'social' | 'copy_trade' | 'pump_graduation' | 'sniper' | 'manual';
+
 export type TradeType =
   | 'BUY'
   | 'SELL_TP1' | 'SELL_TP2' | 'SELL_TP3'
   | 'SELL_STOP_LOSS'
   | 'SELL_TRAILING'
-  | 'SELL_MANUAL';
+  | 'SELL_MANUAL'
+  | 'SELL_DEV_RUG'
+  | 'SELL_TIMEOUT';
 
 export type TradeCloseReason =
   | 'take_profit_1' | 'take_profit_2' | 'take_profit_3'
@@ -37,6 +42,7 @@ export interface Position {
   userId: string;
   contractAddress: string;
   tokenSymbol?: string | undefined;
+  source?: TradeSource | undefined;
   entryPrice: number;
   currentPrice?: number | undefined;
   highestPriceSeen: number;

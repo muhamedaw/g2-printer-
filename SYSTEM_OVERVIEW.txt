@@ -1,0 +1,417 @@
+================================================================================
+  MONEY PRINTER G2 — COMPLETE SYSTEM OVERVIEW
+  Everything that was built, how it works, and how it flows together
+================================================================================
+
+--------------------------------------------------------------------------------
+WHAT IS THIS?
+--------------------------------------------------------------------------------
+
+Money Printer G2 is a fully automated crypto trading bot for Solana.
+It watches social media, detects new tokens, scores them with AI, checks
+their safety, then buys and sells them automatically — all without you
+doing anything.
+
+It supports:
+  - Paper trading (fake money, real prices) — safe to test
+  - Live trading (real SOL, real wallets) — only when you're ready
+  - Multiple users, each with their own portfolio and plan
+  - Telegram bot for alerts and control commands
+  - React web dashboard to see everything live
+
+--------------------------------------------------------------------------------
+MONOREPO STRUCTURE
+--------------------------------------------------------------------------------
+
+money-printer-g2/
+  apps/
+    dashboard/          ← React web UI (Vite + Tailwind)
+
+  services/
+    api-gateway/        ← The central HTTP + WebSocket server
+    market-data/        ← Fetches token prices and new launches
+    social-data/        ← Scrapes Twitter, Reddit, Telegram, News
+    ai-brain/           ← Ollama LLM scoring engine
+    security-engine/    ← Safety checks before any trade
+    risk-engine/        ← Position sizing and loss limits
+    trade-engine/       ← Executes paper and live trades
+    notification-engine/← Telegram bot + alerts
+    monetization/       ← Stripe subscriptions + plan enforcement
+    sandbox/            ← Standalone paper trading simulator
+
+  core/
+    shared/             ← Shared TypeScript types, constants, utilities
+    db/                 ← PostgreSQL schema + Drizzle ORM migrations
+
+--------------------------------------------------------------------------------
+THE FULL DATA FLOW (step by step)
+--------------------------------------------------------------------------------
+
+STEP 1 — TOKEN DISCOVERY
+  Two parallel pipelines find tokens:
+
+  A) Social Signal Pipeline:
+     social-data service scrapes every 30-60 seconds:
+       - Twitter (twitter-api-v2): searches crypto keywords
+       - Reddit (snoowrap): r/solana, r/SolanaMemeCoins, r/CryptoMoonShots
+       - Telegram (gramjs MTProto): monitors public crypto channels
+       - CryptoPanic RSS: Solana news feed
+
+     Each post is normalized → engagementScore calculated
+     Contract addresses (Solana base58) extracted from text
+     Hot contracts (mentioned 2+ times) → published to Redis:
+       Channel: "social:raw_signal"
+
+  B) Market Data Pipeline:
+     market-data service runs on schedule:
+       - Every 3s: PumpFun WebSocket — new token launches in real-time
+       - Every 30s: DexScreener API — trending + newest pairs
+       - Every 60s: Helius wallet watcher — smart wallet activity
+
+     Token snapshots published to Redis:
+       Channel: "market:token_data"
+       Key per token: "token:{mint}:price"
+
+STEP 2 — AI SCORING
+  ai-brain service subscribes to "social:raw_signal"
+
+  For each contract address that gets 3+ signals:
+    1. SentimentModel (Ollama llama3.2:3b):
+       Analyzes text → sentiment (-1 to +1), authenticity (0-1)
+
+    2. NarrativeModel (Ollama llama3.2:3b):
+       Analyzes all posts together → narrative freshness, trend score
+
+    3. RegimeDetector:
+       Reads SOL 24h price change → classifies market as:
+       EXTREME_BULL / BULL / SIDEWAYS / BEAR / EXTREME_BEAR
+       Each regime has a minimum score threshold to trade
+
+    4. ScoreCalculator combines:
+       Sentiment    30%
+       Authenticity 20%
+       Trend Score  20%
+       Freshness    15%
+       Engagement   15%
+       = finalAiScore (0-100)
+
+    5. SelfLearner calibration:
+       Tracks last 1000 trade outcomes
+       If win rate is low → multiplies score down to avoid bad signals
+
+  If score passes regime minimum → published to Redis:
+    Channel: "ai:signal"
+
+STEP 3 — SAFETY CHECKS
+  security-engine subscribes to "ai:signal"
+
+  For each token, runs 6 parallel checks:
+
+    RugChecker         → RugCheck.xyz API score (0-100, lower=safer)
+    HoneypotChecker    → Jupiter sell simulation: if no sell route → honeypot
+    LiquidityChecker   → Must be $10k-$500k (sweet spot: not too small, not pumped)
+    HolderChecker      → Top holder <20%, top 10 holders <60%
+    MintChecker        → Solana RPC: mint authority must be revoked
+    DnaChecker         → Redis: has creator wallet rugged before?
+
+  Results cached in Redis for 15 minutes (SafetyCache)
+
+  If ALL checks pass → published to Redis:
+    Channel: "safety:passed"
+
+STEP 4 — RISK MANAGEMENT
+  risk-engine subscribes to "safety:passed"
+
+  For each user with live trading enabled:
+    DailyLossGuard    → Blocks if today's losses exceed 10% of portfolio
+    DrawdownMonitor   → Blocks if weekly drawdown exceeds 20%
+    PositionSizer     → Calculates position size based on:
+                        - AI score (higher score = bigger position)
+                        - Available capital (reserves 20%)
+                        - Max positions per plan tier
+
+  If all guards pass → published to Redis:
+    Channel: "risk:buy_signal"
+
+STEP 5 — TRADE EXECUTION
+  trade-engine subscribes to "risk:buy_signal"
+
+  Routes to Paper or Live executor based on user settings:
+
+  PAPER EXECUTOR (default):
+    - Simulates 0.3% slippage
+    - Calculates quantity from USD amount / price
+    - Stores position in Redis
+    - Instant, no blockchain
+
+  LIVE EXECUTOR (when enabled):
+    - Loads encrypted private key (AES-256-GCM)
+    - Checks SOL balance
+    - Gets Jupiter quote (best route across all DEXes)
+    - Checks price impact (<5% required)
+    - Builds swap transaction via Jupiter /swap API
+    - Signs with keypair, sends via Solana RPC
+    - Confirms transaction on-chain
+    - Uses Jito tip for MEV protection
+
+  After buy → position stored, trade published to Redis:
+    Channel: "trade:executed"
+
+STEP 6 — POSITION MONITORING (every 15 seconds)
+  trade-engine loops through all open positions:
+
+  For each position:
+    Gets current price from Redis "token:{mint}:price"
+
+    Checks exit conditions in order:
+      STOP LOSS:      price dropped 30% from entry → sell 100%
+      TRAILING STOP:  price dropped 20% from peak (active after TP1) → sell 100%
+      TP1 (2x):       price = 2x entry → sell 30%, activate trailing stop
+      TP2 (5x):       price = 5x entry → sell 30%
+      TP3 (10x):      price = 10x entry → sell 30%
+      MOONBAG:        remaining 10% stays forever
+
+  Each exit → trade published to "trade:executed"
+
+STEP 7 — NOTIFICATIONS
+  notification-engine subscribes to "trade:executed"
+
+  Every trade → instant Telegram message to user:
+    Buy:  "🟢 BUY — TOKEN  $100.00  Entry: $0.00001234  Score: 85/100"
+    TP1:  "🟢 TP1 (2x) — TOKEN  Proceeds: $60  PnL: +100% ($30)"
+    SL:   "🔴 STOP LOSS — TOKEN  Proceeds: $70  PnL: -30% (-$30)"
+
+  Scheduled reports:
+    Daily at 22:00 UTC — today's closed trades + PnL
+    Sunday at 22:30 UTC — weekly performance summary
+
+  Telegram Bot Commands:
+    /start    — register, enable trading
+    /status   — show system status + mode
+    /positions— list all open positions with PnL
+    /pnl      — full portfolio summary
+    /stop     — pause new trades (keeps monitoring open positions)
+    /resume   — resume trading
+    /close <mint> — manually close a position
+
+--------------------------------------------------------------------------------
+PLAN TIERS
+--------------------------------------------------------------------------------
+
+  FREE     — Paper trading only, 3 max positions, 30 min signal delay
+  STARTER  $49/mo — Live trading, 5 positions, copy trading
+  PRO      $149/mo — 10 positions, API access, full features
+  WHALE    $499/mo — Unlimited positions, all features
+
+  Plan enforced at every step:
+    - API Gateway: rate limit per plan (free=30/min, whale=1000/min)
+    - Risk Engine: max positions from plan
+    - Trade Engine: paper/live based on plan
+    - API Keys: Pro+ only
+
+--------------------------------------------------------------------------------
+SANDBOX (Machine 2) — STANDALONE PAPER TRADER
+--------------------------------------------------------------------------------
+
+  Separate simpler service: services/sandbox/
+  Has its OWN Telegram bot, portfolio, and scoring
+
+  /sim 100 2h  — run simulation with $100 for 2 hours
+  /status      — current simulation state
+  /positions   — what it's holding
+  /report      — full results after sim ends
+
+  QuickScorer (100 points max):
+    Liquidity   25 pts
+    Volume      20 pts
+    Price move  20 pts
+    Safety      20 pts
+    Holders     10 pts
+    Age bonus    5 pts
+
+  No AI, no social signals — pure on-chain data scoring
+
+--------------------------------------------------------------------------------
+SERVICES AND THEIR PORTS
+--------------------------------------------------------------------------------
+
+  api-gateway          Port 3001  (HTTP + WebSocket)
+  monetization         Port 3002  (Stripe webhook receiver)
+  dashboard (React)    Port 5173  (dev) / 80 (prod)
+
+  All other services: no HTTP — communicate via Redis pub/sub only
+
+--------------------------------------------------------------------------------
+REDIS CHANNELS (pub/sub)
+--------------------------------------------------------------------------------
+
+  social:raw_signal    Social scraper → AI Brain
+  social:hot_contracts Contracts mentioned 2+ times
+  market:token_data    Token price snapshots
+  market:new_token     New PumpFun token detected
+  ai:signal            AI-scored token (passed scoring)
+  safety:passed        Token passed all 6 safety checks
+  risk:buy_signal      Final buy signal with position size
+  trade:executed       A trade was executed (buy or sell)
+  trade:manual_close   User requested manual close
+  whale:classified     Wallet classified by PatternClassifier
+  audit:log            Audit trail of sensitive actions
+
+--------------------------------------------------------------------------------
+REDIS KEYS (state)
+--------------------------------------------------------------------------------
+
+  token:{mint}:price              Current price (updated every 30s)
+  user:{userId}:plan              Plan tier (free/starter/pro/whale)
+  user:{userId}:paper_mode        '1' = paper, '0' = live
+  user:{userId}:encrypted_wallet  AES-256-GCM encrypted private key
+  user:{userId}:chat_id           Telegram chat ID
+  user:{userId}:max_positions     From plan limits
+  positions:{userId}              SET of open position mints
+  position:{userId}:{mint}        Position data (JSON)
+  trades:{userId}                 LIST of last 500 trades (JSON)
+  portfolio:{userId}:usd          Total portfolio value
+  portfolio:{userId}:open_count   Number of open positions
+  trading:{userId}:paused         Set = trading paused
+  users:live_trading              SET of all active trader user IDs
+  ratelimit:{userId}:{minute}     Per-user API rate limit counter
+  safety:{mint}                   Cached safety check result (15 min TTL)
+  learning:outcomes               Last 1000 trade outcomes for SelfLearner
+  market:regime                   Current market regime + min score
+  audit:log                       Last 10,000 audit events
+  dna:creator:{wallet}            Rug history per creator wallet
+
+--------------------------------------------------------------------------------
+DATABASE TABLES (PostgreSQL via Drizzle ORM)
+--------------------------------------------------------------------------------
+
+  users               id, email, passwordHash, planTier, isActive
+  subscriptions       stripeCustomerId, stripeSubscriptionId, planTier, status
+  api_keys            keyHash, name, requestsToday, requestLimit
+  user_settings       capitalUsd, paperTrading, stopLossPct, tp1/2/3Multiplier
+  trades              userId, contractAddress, tradeType, pnlUsd, txSignature
+  positions           userId, contractAddress, entryPrice, tpExecuted flags
+  raw_signals         platform, content, engagementScore, contractAddress
+  ai_signals          contractAddress, finalAiScore, platformsDetected
+  safety_checks       tokenAddress, passed, rejectionReason, checkedAt
+  token_blacklist     mint, reason, addedAt
+  token_dna           patternId, creatorWallet, ruggedTokens
+  smart_wallets       address, pattern, winRate, avgHoldMinutes
+  daily_stats         date, totalTrades, winRate, totalPnlUsd
+  learning_log        contractAddress, aiScore, pnlPct, holdMinutes
+  sandbox_sessions    userId, startBalance, status, config
+  sandbox_positions   sessionId, mint, entryPrice, qty
+  sandbox_trades      sessionId, mint, tradeType, pnlUsd
+
+--------------------------------------------------------------------------------
+EXTERNAL APIS USED
+--------------------------------------------------------------------------------
+
+  DexScreener          Token prices, trending pairs, new pairs (free)
+  RugCheck.xyz         Token safety scores (free)
+  Jupiter (jup.ag)     DEX swap routing, honeypot detection (free)
+  PumpFun WebSocket    Real-time new token launches (free)
+  Helius               Solana RPC, wallet transaction history, webhooks
+  Ollama               Local LLM for AI scoring (free, runs on your machine)
+  Stripe               Subscription billing
+  Twitter API v2       Tweet search (bearer token, free tier)
+  Reddit API           Subreddit scraping (free)
+  CryptoPanic RSS      Crypto news (free)
+  Telegram MTProto     Channel monitoring (free, needs API ID/hash)
+  Telegram Bot API     Notifications and commands (free)
+
+--------------------------------------------------------------------------------
+ENVIRONMENT VARIABLES NEEDED
+--------------------------------------------------------------------------------
+
+  All services read from their own .env file:
+
+  REQUIRED TO RUN:
+    POSTGRES_PASSWORD=changeme
+    REDIS_PASSWORD=changeme
+    REDIS_PORT=6379
+    TELEGRAM_BOT_TOKEN=      ← Get from @BotFather on Telegram
+    JWT_SECRET=              ← Any long random string (32+ chars)
+
+  FOR LIVE TRADING:
+    WALLET_MASTER_SECRET=    ← Long secret to encrypt private keys
+    SOLANA_RPC_URL=          ← Helius/Alchemy RPC URL
+    HELIUS_API_KEY=          ← From helius.xyz
+
+  FOR AI SCORING:
+    (none — Ollama runs locally, auto-detected at localhost:11434)
+    OLLAMA_MODEL=llama3.2:3b ← default
+
+  FOR SOCIAL SCRAPING (optional, works without):
+    TWITTER_BEARER_TOKEN=
+    REDDIT_CLIENT_ID=
+    REDDIT_CLIENT_SECRET=
+    TELEGRAM_API_ID=
+    TELEGRAM_API_HASH=
+    TELEGRAM_SESSION=
+
+  FOR MONETIZATION (optional):
+    STRIPE_SECRET_KEY=
+    STRIPE_WEBHOOK_SECRET=
+    STRIPE_PRICE_STARTER=
+    STRIPE_PRICE_PRO=
+    STRIPE_PRICE_WHALE=
+
+--------------------------------------------------------------------------------
+HOW TO START (development)
+--------------------------------------------------------------------------------
+
+  1. Start infrastructure:
+       docker compose up -d    (starts PostgreSQL + Redis)
+
+  2. Run database migrations:
+       cd core/db
+       pnpm db:migrate
+
+  3. Start each service in separate terminals:
+       cd services/sandbox && pnpm dev
+       cd services/market-data && pnpm dev
+       cd services/social-data && pnpm dev
+       cd services/ai-brain && pnpm dev
+       cd services/security-engine && pnpm dev
+       cd services/risk-engine && pnpm dev
+       cd services/trade-engine && pnpm dev
+       cd services/notification-engine && pnpm dev
+       cd services/api-gateway && pnpm dev
+       cd apps/dashboard && pnpm dev
+
+  4. Open browser: http://localhost:5173
+     Register an account, enable paper trading, watch the bot trade
+
+--------------------------------------------------------------------------------
+SAFETY FEATURES
+--------------------------------------------------------------------------------
+
+  - Default paper trading — real money only when YOU explicitly switch
+  - Multiple exit strategies — never stays in a bad trade forever
+  - Stop loss at -30% — maximum loss per position
+  - Daily loss limit — stops all trading if daily PnL drops 10%
+  - Weekly drawdown limit — stops all trading at 20% portfolio drop
+  - Honeypot detection — Jupiter sell simulation before every buy
+  - DNA tracker — remembers serial ruggers, never trades their tokens again
+  - Liquidity range filter — ignores tokens too small OR already pumped
+  - Mint authority check — never buys if dev can print more tokens
+  - Holder concentration check — rejects if top 10 holders own 60%+
+  - Price impact check — skips if swap would move the price 5%+
+
+--------------------------------------------------------------------------------
+BUILT WITH (all open source, zero paid AI)
+--------------------------------------------------------------------------------
+
+  Runtime:      Node.js + TypeScript + tsx
+  Monorepo:     pnpm workspaces
+  Web Server:   Fastify (2x faster than Express)
+  Database:     PostgreSQL + Drizzle ORM
+  Cache/Queue:  Redis + BullMQ
+  AI:           Ollama (local, llama3.2:3b — free, private)
+  Frontend:     React + Vite + Tailwind + Recharts
+  Bot:          Grammy.js (Telegram)
+  Blockchain:   @solana/web3.js + Jupiter API
+  Billing:      Stripe
+
+================================================================================

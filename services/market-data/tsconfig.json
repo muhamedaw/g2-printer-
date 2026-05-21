@@ -1,8 +1,12 @@
-﻿{
+{
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "outDir": "./dist",
-    "rootDir": "./src"
+    "outDir": "dist",
+    "rootDir": "src",
+    "paths": {
+      "@mpg2/shared": ["../../core/shared/dist/index.d.ts"],
+      "@mpg2/db": ["../../core/db/dist/index.d.ts"]
+    }
   },
-  "include": ["src"]
+  "include": ["src/**/*"]
 }

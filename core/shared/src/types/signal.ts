@@ -1,4 +1,4 @@
-export type Platform = 'twitter' | 'reddit' | 'telegram' | 'news';
+export type Platform = 'twitter' | 'reddit' | 'telegram' | 'news' | 'tiktok' | 'instagram';
 
 export interface RawSignal {
   id?: number;
@@ -28,6 +28,9 @@ export interface AiSignal {
   influencerCount: number;
   reasoning: string;
   passedToSafety: boolean;
+  source?: 'social' | 'copy_trade' | 'pump_graduation' | 'sniper';
+  userId?: string;
+  copyTradeWallet?: string | undefined;
   createdAt: Date;
 }
 
@@ -40,7 +43,8 @@ export interface BuySignal {
   safetyScore: number;
   platformsDetected: Platform[];
   reasoning: string;
-  source: 'social' | 'copy_trade' | 'pump_graduation' | 'manual';
+  source: 'social' | 'copy_trade' | 'pump_graduation' | 'sniper' | 'manual';
   userId: string;
+  copyTradeWallet?: string | undefined;
   createdAt: Date;
 }

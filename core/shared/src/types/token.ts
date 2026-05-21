@@ -22,6 +22,7 @@ export interface TokenSafety {
   topHolderPct: number;
   top10HoldersPct: number;
   holderCount: number;
+  giniCoefficient: number;
   isHoneypot: boolean;
   liquidityUsd: number;
   tokenAgeMinutes: number;

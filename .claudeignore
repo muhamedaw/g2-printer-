@@ -1,0 +1,31 @@
+# Build outputs
+dist/
+build/
+*.js.map
+
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Lock files & blobs
+pnpm-lock.yaml
+*.blob
+*.exe
+
+# Logs
+logs/
+*.log
+
+# Migrations (read only when needed)
+core/db/migrations/
+
+# Seeds (rarely needed)
+core/db/seeds/
+
+# Dashboard source (big, rarely edited)
+apps/dashboard/src/components/
+apps/dashboard/src/assets/
+
+# Misc
+SYSTEM_OVERVIEW.txt
+.dockerignore
